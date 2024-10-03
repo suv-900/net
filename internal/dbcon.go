@@ -5,14 +5,14 @@ import(
 "log"
 )
 
-type PGDB struct{
+type PostgresDB struct{
 	conn *pgx.Conn
 }
 
-var pgdb *PGDB
+var pgdb *PostgresDB
 
 func setup()error{
-	pgdb = &PGDB{}
+	pgdb = &PostgresDB{}
 	
 	log.Print("connecting postgres.")
 	if pgdb.conn,err := openConnection();err != nil{
@@ -20,7 +20,7 @@ func setup()error{
 	}
 	log.Print("connection successfull.")
 
-	log.Print("sending ping.")
+	log.Print("ping?.")
 	if err := pgdb.conn.Ping(context.Background()); err != nil{
 		return err
 	}
