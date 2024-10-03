@@ -13,10 +13,10 @@ type User struct{
 	EmailVerified bool
 	Password string
 	Role string
-	Bio *string 
+	Bio string 
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	DeletedAt *time.Time
+	DeletedAt time.Time
 	IsDeleted bool
 }
 
@@ -104,9 +104,53 @@ func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,err
 	
 	if err := tx.Commit();err != nil{
 		log.Print("commit error: ",err)
+		return false,err
 	}
 
 	return count == 0,nil
 }
+
+func (pg *PostgresDB) getUser(ctx context.Context,id uint)(*User,error){
+	sql := `
+		SELECT name,email,email_verified,bio,role,created_at
+		FROM users WHERE id = $1
+	`
+	user := User{}
+	
+	stmt,err := pg.Conn.Prepare(ctx,"getuser",sql)
+	defer stmt.Close()
+	if err != nil{
+		log.Print("error preparing statement: ",err)
+		return nil,err
+	}
+	
+	err = stmt.QueryRow(id).Scan(&user.Name,&user.Email,&user.EmailVerified,
+		&user.Bio,&user.Role,&user.CreatedAt)
+	
+	if err != nil{
+		if err == sql.ErrNoRows{
+			return nil,errors.New("user not found.")
+		}
+		return nil,err	
+	}
+
+	return &user,nil
+}
+
+func (pg *PostgresDB) getVerifiedUsersList()([]User,error){
+	sql := `
+		SELECT name,email,
+	`
+}
+
+
+
+
+
+
+
+
+
+
 
 
