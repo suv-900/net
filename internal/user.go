@@ -76,14 +76,34 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 	return id,nil
 }
 
-func (pg *PostgresDB) checkExists(email string)(bool,error){
-	sql := `
-		SELECT COUNT(1) FROM users WHERE email = $1;
-	`
+func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,error){
+	sql := `SELECT COUNT(1) FROM users WHERE email = $1;`
+	txopts := pgx.TxOptions{IsoLevel:"serializable",AccessMode:"read only"}
 	var count uint
-	err := pg.Conn.Query(context.Background(),sql,email).Scan(&count)
+	
+	tx,err := pg.Conn.BeginTx(ctx,txopts)
 	if err != nil{
 		return false,err
+	}
+	
+	defer tx.RollBack(ctx)
+
+	rows,err := tx.Query(ctx,sql,email)
+	
+	defer rows.Close()
+	
+	if err := rows.Scan(&count) err != nil{
+		log.Print("scan error: ",err)
+		return false,err
+	}
+
+	if rows.Err() != nil{
+		log.Print("rows error: ",rows.Err())
+		return false,err
+	}
+	
+	if err := tx.Commit();err != nil{
+		log.Print("commit error: ",err)
 	}
 
 	return count == 0,nil
