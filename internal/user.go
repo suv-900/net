@@ -66,7 +66,7 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 
 	var id uint
 	
-	txopts := pgx.TxOptions{IsoLevel:"serializable"}
+	txopts := pgx.TxOptions{IsoLevel:Serializable}
 
 	tx,err := pg.Conn.BeginTx(context.Background(),txopts)
 	defer tx.Rollback(context.Background())
@@ -90,7 +90,7 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 func (pg *PostgresDB) verifyUser(ctx context.Context,id uint)error{
 	sql := `UPDATE users SET email_verified=true WHERE id = $1;`
 
-	txopts := pgx.TxOptions{IsoLevel:"serializable"}
+	txopts := pgx.TxOptions{IsoLevel:Serializable}
 	tx,err := pg.Conn.BeginTx(ctx,txopts)
 	defer tx.Rollback(ctx)
 	
@@ -122,18 +122,17 @@ func (pg *PostgresDB) verifyUser(ctx context.Context,id uint)error{
 
 func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,error){
 	sql := `SELECT COUNT(1) FROM users WHERE email = $1;`
-	txopts := pgx.TxOptions{IsoLevel:"serializable",AccessMode:"read only"}
+	
+	txopts := pgx.TxOptions{IsoLevel:Serializable,AccessMode:ReadOnly}
 	var count uint
 	
 	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	defer tx.RollBack(ctx)
 	if err != nil{
 		return false,err
 	}
 	
-	defer tx.RollBack(ctx)
-
 	rows,err := tx.Query(ctx,sql,email)
-	
 	defer rows.Close()
 	
 	if err := rows.Scan(&count) err != nil{
@@ -186,7 +185,7 @@ func (pg *PostgresDB) updatePassword(ctx context.Context,id uint,password string
 		UPDATE users SET password = @password
 		WHERE id = @id;
 	`
-	txopts := pgx.TxOptions{IsoLevel:"serializable"}
+	txopts := pgx.TxOptions{IsoLevel:Serializable}
 	tx,err := pg.Conn.BeginTx(ctx,txopts)
 	defer tx.Rollback(ctx)
 	if err != nil{
