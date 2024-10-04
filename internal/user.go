@@ -181,6 +181,33 @@ func (pg *PostgresDB) getUser(ctx context.Context,id uint)(*User,error){
 	return &user,nil
 }
 
+func (pg *PostgresDB) updatePassword(ctx context.Context,id uint,password string)error{
+	sql := `
+		UPDATE users SET password = @password
+		WHERE id = @id;
+	`
+	txopts := pgx.TxOptions{IsoLevel:"serializable"}
+	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
+	if err != nil{
+		log.Print("error while creating transaction: ",err)
+		return err
+	}
+	
+	_,err := tx.Exec(ctx,sql,pgx.NamedArgs{"password":password,"id":id})
+	if err != nil{
+		log.Print("error occured during executing update: ",err)
+		return err
+	}
+	
+	if err := tx.Commit();err != nil{
+		log.Print("error occured while commit: ",err)
+		return err
+	}
+	
+	return nil
+}
+
 func (pg *PostgresDB) getVerifiedUsersList(ctx context.Context,limit,offset uint)([]*User,error){
 	sql := `
 		SELECT id,name,email,role FROM users WHERE email_verified=true
@@ -237,4 +264,38 @@ func (pg *PostgresDB) getDeletedUsers(ctx context.Context,limit,offset string)([
 
 	return users,nil
 }
+
+func (pg *PostgresDB) getAllUsers(ctx context.Context,limit,offset uint,role string)([]*User,error){
+	sql := `
+		SELECT id,name,role,email,email_verified,created_at,updated_at
+		WHERE role = @role ORDER BY created_at ASC LIMIT @limit OFFSET @offset
+	`
+	args := pgx.NamedArgs{
+		"role":role,
+		"limit":limit,
+		"offset":offset,
+	}
+	
+	rows,err := pg.Conn.Query(ctx,sql,args)
+	defer rows.Close()
+	
+	var users []*User
+	while rows.Next(){
+		var user User
+		err = rows.Scan(&user.Id,&user.Name,&user.Role,&user.Email,&user.EmailVerified,
+		&user.CreatedAt,&user.UpdatedAt)
+		if err != nil{
+			log.Print("error while scanning rows: ",err)
+			return nil,err
+		}
+		users = append(users,&user)
+	}
+	if err := rows.Err();err != nil{
+		log.Print("error occured in db: ",err)
+		return nil,err
+	}
+
+	return users,nil
+}
+
 
