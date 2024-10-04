@@ -3,25 +3,29 @@ package internal
 import(
 "github.com/jackc/pgx/v5"
 "log"
+"context"
 )
 
 type PostgresDB struct{
-	conn *pgx.Conn
+	Conn *pgx.Conn
 }
 
 var pgdb *PostgresDB
 
-func setup()error{
+func Setup(dburl string)error{
 	pgdb = &PostgresDB{}
-	
+		
 	log.Print("connecting postgres.")
-	if pgdb.conn,err := openConnection();err != nil{
+	
+	var err error
+	pgdb.Conn,err = openConnection(dburl)
+	if err != nil{
 		return err
 	}
 	log.Print("connection successfull.")
 
-	log.Print("ping?.")
-	if err := pgdb.conn.Ping(context.Background()); err != nil{
+	log.Print("ping?")
+	if err := pgdb.Conn.Ping(context.Background()); err != nil{
 		return err
 	}
 	log.Print("ping successfull")
@@ -30,7 +34,7 @@ func setup()error{
 	if err := pgdb.migrate();err != nil{
 		return err
 	}
-
+	log.Print("migration successfull.")
 	return nil
 }
 
@@ -44,13 +48,12 @@ func (pg *PostgresDB) migrate()error{
 	return nil
 }
 
-func openConnection()(*pgx.Conn,error){
-	dburl := "postgres://core:123@localhost:5432/net"
+func openConnection(dburl string)(*pgx.Conn,error){
 	conn,err := pgx.Connect(context.Background(),dburl)
 	if err != nil{
 		log.Print("couldnt connect to postgres: ",err)
-		return err
+		return nil,err
 	}
-	return conn
+	return conn,nil
 }
 
