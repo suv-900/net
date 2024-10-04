@@ -47,24 +47,35 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 	sql := `
 		INSERT INTO users(name,email,email_verified,
 		password,role,bio,created_at,updated_at,
-		deleted_at,is_del) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		deleted_at,is_del) VALUES(@name,@email,@email_verified,@password
+		@role,@bio,@createdat,@updatedat,@deleted_at,@is_del)
 		RETURNING id;
 	`
+	args := pgx.NamedArgs{
+		"name":user.Name,
+		"email":user.Email,
+		"email_verified":false,
+		"password":user.Password,
+		"role":user.Role,
+		"bio":user.Bio,
+		"createdat":time.Now(),
+		"updatedat":time.Now(),
+		"deletedat":nil,
+		"is_del":false,
+	}
+
 	var id uint
 	
 	txopts := pgx.TxOptions{IsoLevel:"serializable"}
 
 	tx,err := pg.Conn.BeginTx(context.Background(),txopts)
+	defer tx.Rollback(context.Background())
+	
 	if err != nil{
 		return id,err
 	}
 
-	defer tx.Rollback(context.Background())
-
-	err = tx.Query(context.Background(),sql,
-		user.Name,user.Email,false,
-		user.Password,user.Role,time.Now(),
-		time.Now(),nil,false).Scan(&id)
+	err = tx.Query(context.Background(),sql,args).Scan(&id)
 	if err != nil{
 		return id,err
 	}
@@ -74,6 +85,39 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 	}
 
 	return id,nil
+}
+
+func (pg *PostgresDB) verifyUser(ctx context.Context,id uint)error{
+	sql := `UPDATE users SET email_verified=true WHERE id = $1;`
+
+	txopts := pgx.TxOptions{IsoLevel:"serializable"}
+	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
+	
+	if err != nil{
+		log.Print("error creating transaction: ",err)
+	}
+
+	stmt,err := tx.Prepare(ctx,"verify_email",sql)
+	defer stmt.Close()
+
+	if err != nil{
+		log.Print("error preparing sql: ",err)
+		return err
+	}
+
+	err = stmt.Exec(ctx,id)
+	if err != nil{
+		log.Print("error while executing sql: ",err)
+		return err
+	}
+
+	if err := tx.Commit(); err != nil{
+		log.Print("error while making commits: ",err)
+		return err
+	}
+
+	return nil
 }
 
 func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,error){
@@ -137,20 +181,60 @@ func (pg *PostgresDB) getUser(ctx context.Context,id uint)(*User,error){
 	return &user,nil
 }
 
-func (pg *PostgresDB) getVerifiedUsersList()([]User,error){
+func (pg *PostgresDB) getVerifiedUsersList(ctx context.Context,limit,offset uint)([]*User,error){
 	sql := `
-		SELECT name,email,
+		SELECT id,name,email,role FROM users WHERE email_verified=true
+		ORDER BY created_at ASC LIMIT $1 OFFSET $2;
 	`
+	rows,err = pg.Conn.Query(ctx,sql,limit,offset)
+	defer rows.Close()
+	
+	var users []*User
+	while rows.Next(){
+		var user User
+		err = rows.Scan(&user.Id,&user.Name,&user.Email,&user.Role)
+		if err != nil{
+			log.Print("error occured in db: ",err)
+			return nil,err
+		}
+		users = append(users,&user)
+	}
+	
+	if err := rows.Err();err != nil{
+		log.Print("error occured in db: ",err)
+		return nil,err
+	}
+	
+	return users,nil
 }
 
+func (pg *PostgresDB) getDeletedUsers(ctx context.Context,limit,offset string)([]*User,error){
+	sql := `
+		SELECT id,name,email,role,created_at,deleted_at 
+		FROM users WHERE is_del = true ORDER BY deleted_at ASC
+		LIMIT $1 OFFSET $2;
+	`
+	rows,err := pg.Conn.Query(ctx,sql,limit,offset)
+	defer rows.Close()
+	
+	var users []*User
+	while rows.Next(){
+		var user User
+		
+		err = rows.Scan(&user.Id,&user.Name,&user.Email,&user.Role,&user.CreatedAt,&user.DeletedAt)
+		if err != nil{
+			log.Print("error occured while scanning: ",err)
+			return nil,err
+		}
 
+		users = append(users,&user)
+	}
+	
+	if err := rows.Err();err != nil{
+		log.Print("error occured in db: ",err)
+		return nil,err
+	}
 
-
-
-
-
-
-
-
-
+	return users,nil
+}
 
