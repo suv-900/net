@@ -11,10 +11,11 @@ type User struct{
 	Name string
 	Email string
 	EmailVerified bool
-	Password string
+	Password *string
 	Role string
 	FollowerCount uint
 	FollowingCount uint
+	ImageUrl *string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt time.Time
@@ -79,8 +80,9 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 		LANGUAGE plpgsql
 		AS $$
 		BEGIN 
-			SELECT u.id,u.name,u.follower_count,u.following_count FROM 
-			users u JOIN relationships r ON u.id = r.follower_id 
+			SELECT u.id,u.name,u.follower_count,u.following_count,ui.pfp_url,ui.bio 
+			FROM users u JOIN relationships r ON u.id = r.follower_id 
+			user_info ui JOIN users u ON ui.user_id = u.id
 			WHERE r.following_id = id LIMIT limit OFFSET offset;
 		END;$$;
 
@@ -88,8 +90,9 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 		LANGUAGE plpgsql
 		AS $$
 		BEGIN
-			SELECT u.id,u.name,u.follower_count,u.following_count FROM
-			users u JOIN relationships r ON u.id = r.following_id 
+			SELECT u.id,u.name,u.follower_count,u.following_count,ui.pfp_url,ui.bio 
+			FROM users u JOIN relationships r ON u.id = r.following_id
+			user_info ui JOIN users u ON ui.user_id = u.id
 			WHERE r.follower_id = id LIMIT limit OFFSET offset;
 		END;$$;
 	`
