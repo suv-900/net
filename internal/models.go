@@ -15,7 +15,13 @@ type Models struct{
 		GetUser(c context.Context,id uint)(*User,error)
 		GetPassword(c context.Context,email string)(*string,error)
 		UpdatePassword(c context.Context,id uint,password string)error
+		Delete(c context.Context,id uint)error
+		DeleteForce(c context.Context,id uint)error
+		Follow(c context.Context,follower_id uint,following_id)error
+		Unfollow(c context.Context,follower_id uint,following_id)error
 		
+		GetFollowers(c context.Context,id,limit,offset uint)([]*User,error)
+		GetFollowing(c context.Context,id,limit,offset uint)([]*User,error)
 		GetVerifiedUsers(c context.Context,limit,offset uint)([]*User,error)
 		GetDeletedUsers(c context.Context,limit,offset uint)([]*User,error)
 		GetAllUsers(c context.Context,limit,offset uint)([]*User,error)
