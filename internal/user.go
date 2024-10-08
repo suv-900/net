@@ -74,13 +74,30 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 			UPDATE users SET follower_count=follower_count-1 WHERE id = following_id;
 
 		END;$$;
-			
+		
+		CREATE OR REPLACE PROCEDURE getFollowers(id int,limit int,offset int)
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN 
+			SELECT u.id,u.name,u.follower_count,u.following_count FROM 
+			users u JOIN relationships r ON u.id = r.follower_id 
+			WHERE r.following_id = id LIMIT limit OFFSET offset;
+		END;$$;
+
+		CREATE OR REPLACE PROCEDURE getFollowing(id int,limit int,offset int)
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			SELECT u.id,u.name,u.follower_count,u.following_count FROM
+			users u JOIN relationships r ON u.id = r.following_id 
+			WHERE r.follower_id = id LIMIT limit OFFSET offset;
+		END;$$;
 	`
 	tx,err := u.conn.BeginTx(ctx)
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error while creating tx: ",err)
+		log.Print("error for creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
@@ -156,7 +173,7 @@ func (u *UserRepo) Follow(ctx context.Context,follower_id uint,following_id uint
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error while creating tx: ",err)
+		log.Print("error for creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
@@ -177,7 +194,7 @@ func (u *UserRepo) Follow(ctx context.Context,follower_id uint,following_id uint
 }
 
 func (u *UserRepo) Unfollow(ctx context.Context,follower_id uint,following_id uint)error{
-	sql := `CALL unfollowproc(@follower_id,@following_id)`	
+	sql := `CALL unfollowproc(@follower_id,@following_id);`	
 	args := pgx.NamedArgs{
 		"follower_id":follower_id,
 		"following_id":following_id,
@@ -188,7 +205,7 @@ func (u *UserRepo) Unfollow(ctx context.Context,follower_id uint,following_id ui
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error while creating tx: ",err)
+		log.Print("error for creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
@@ -207,19 +224,7 @@ func (u *UserRepo) Unfollow(ctx context.Context,follower_id uint,following_id ui
 	return nil
 }
 
-func (u *UserRepo) GetFollowers(ctx context.Context,id,limit,offset uint)([]*User,error){
-	sql := `
-		
 
-	`	
-}
-
-func (u *UserRepo) GetFollowing(ctx context.Context,id,limit,offset uint)([]*User,error){
-	sql := `
-		
-
-	`	
-}
 func (u *UserRepo) Delete(ctx context.Context,id uint)error{
 	sql := `UPDATE users SET is_del = true WHERE id = $1`
 	
@@ -228,7 +233,7 @@ func (u *UserRepo) Delete(ctx context.Context,id uint)error{
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error while creating tx: ",err)
+		log.Print("error for creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
@@ -255,7 +260,7 @@ func (u *UserRepo) DeleteForce(ctx context.Context,id uint)error{
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error while creating tx: ",err)
+		log.Print("error for creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
@@ -295,12 +300,12 @@ func (u *UserRepo) VerifyUserEmail(ctx context.Context,id uint)error{
 
 	err = stmt.Exec(ctx,id)
 	if err != nil{
-		log.Print("error while executing sql: ",err)
+		log.Print("error for executing sql: ",err)
 		return err
 	}
 
 	if err := tx.Commit(); err != nil{
-		log.Print("error while making commits: ",err)
+		log.Print("error for making commits: ",err)
 		return err
 	}
 
@@ -383,7 +388,7 @@ func (u *UserRepo) GetPassword(ctx context.Context,id uint)(*string,error){
 
 	err = rows.Scan(&password)
 	if err != nil{
-		log.Print("error while scanning: ",err)
+		log.Print("error for scanning: ",err)
 		return nil,err
 	}
 	
@@ -393,7 +398,7 @@ func (u *UserRepo) GetPassword(ctx context.Context,id uint)(*string,error){
 	}
 
 	if err := tx.Commit();err != nil{
-		log.Print("error while commit: ",err)
+		log.Print("error for commit: ",err)
 		return nil,err
 	}
 	
@@ -407,7 +412,7 @@ func (u *UserRepo) UpdatePassword(ctx context.Context,id uint,password string)er
 	tx,err := u.conn.BeginTx(ctx,txopts)
 	defer tx.Rollback(ctx)
 	if err != nil{
-		log.Print("error while creating transaction: ",err)
+		log.Print("error for creating transaction: ",err)
 		return err
 	}
 	
@@ -418,7 +423,7 @@ func (u *UserRepo) UpdatePassword(ctx context.Context,id uint,password string)er
 	}
 	
 	if err := tx.Commit();err != nil{
-		log.Print("error occured while commit: ",err)
+		log.Print("error occured for commit: ",err)
 		return err
 	}
 	
@@ -434,7 +439,7 @@ func (u *UserRepo) GetVerifiedUsers(ctx context.Context,limit,offset uint)([]*Us
 	defer rows.Close()
 	
 	var users []*User
-	while rows.Next(){
+	for rows.Next(){
 		var user User
 		err = rows.Scan(&user.Id,&user.Name,&user.Email,&user.Role)
 		if err != nil{
@@ -462,12 +467,12 @@ func (u *UserRepo) GetDeletedUsers(ctx context.Context,limit,offset string)([]*U
 	defer rows.Close()
 	
 	var users []*User
-	while rows.Next(){
+	for rows.Next(){
 		var user User
 		
 		err = rows.Scan(&user.Id,&user.Name,&user.Email,&user.Role,&user.CreatedAt,&user.DeletedAt)
 		if err != nil{
-			log.Print("error occured while scanning: ",err)
+			log.Print("error occured for scanning: ",err)
 			return nil,err
 		}
 
@@ -497,12 +502,12 @@ func (u *UserRepo) GetAllUsers(ctx context.Context,limit,offset uint,role string
 	defer rows.Close()
 	
 	var users []*User
-	while rows.Next(){
+	for rows.Next(){
 		var user User
 		err = rows.Scan(&user.Id,&user.Name,&user.Role,&user.Email,&user.EmailVerified,
 		&user.CreatedAt,&user.UpdatedAt)
 		if err != nil{
-			log.Print("error while scanning rows: ",err)
+			log.Print("error for scanning rows: ",err)
 			return nil,err
 		}
 		users = append(users,&user)
@@ -510,6 +515,76 @@ func (u *UserRepo) GetAllUsers(ctx context.Context,limit,offset uint,role string
 	if err := rows.Err();err != nil{
 		log.Print("error occured in db: ",err)
 		return nil,err
+	}
+
+	return users,nil
+}
+
+func (u *UserRepo) GetFollowers(ctx context.Context,id,limit,offset uint)([]*User,error){
+	sql := `CALL getFollowers(@id,@limit,@offset);`
+
+	args := pgx.NamedArgs{
+		"id":id,
+		"limit":limit,
+		"offset":offset,
+	}
+	
+	rows,err := u.conn.Query(ctx,sql,args)
+	defer rows.Close()
+	if err != nil{
+		log.Print("error executing query: ",err)
+		return nil,ErrInternalServerError
+	}
+	
+	var users []*User
+	for rows.Next(){
+		var user User
+		err = rows.Scan(&user.Id,&user.Name,&user.FollowerCount,&user.FollowingCount)
+		if err != nil{
+			log.Print("err while scanning rows: ",err)
+			return nil,ErrInternalServerError
+		}
+		users = append(users,&user)
+	}
+	
+	if err := rows.Err();err != nil{
+		log.Print("error in db: ",err)
+		return nil,ErrInternalServerError
+	}
+
+	return users,nil
+}
+
+func (u *UserRepo) GetFollowing(ctx context.Context,id,limit,offset uint)([]*User,error){
+	sql := `CALL getFollowing(@id,@limit,@offset);`
+
+	args := pgx.NamedArgs{
+		"id":id,
+		"limit":limit,
+		"offset":offset,
+	}
+	
+	rows,err := u.conn.Query(ctx,sql,args)
+	defer rows.Close()
+	if err != nil{
+		log.Print("error executing query: ",err)
+		return nil,ErrInternalServerError
+	}
+	
+	var users []*User
+	for rows.Next(){
+		var user User
+		err = rows.Scan(&user.Id,&user.Name,&user.FollowerCount,&user.FollowingCount)
+		if err != nil{
+			log.Print("err while scanning rows: ",err)
+			return nil,ErrInternalServerError
+		}
+		users = append(users,&user)
+	}
+	
+	if err := rows.Err();err != nil{
+		log.Print("error in db: ",err)
+		return nil,ErrInternalServerError
 	}
 
 	return users,nil
