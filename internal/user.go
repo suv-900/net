@@ -13,7 +13,8 @@ type User struct{
 	EmailVerified bool
 	Password string
 	Role string
-	Bio string 
+	FollowerCount uint
+	FollowingCount uint
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt time.Time
@@ -25,7 +26,7 @@ type UserRepo struct{
 }
 
 func (u *UserRepo) Migrate(ctx context.Context)error{
-	ddl := `
+	user_ddl := `
 		CREATE TABLE IF NOT EXISTS users(
 			id serial2 PRIMARY KEY,
 			name varchar(20),
@@ -33,21 +34,71 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 			email_verified boolean DEFAULT false,
 			password varchar(50) NOT NULL,
 			role varchar(10) NOT NULL,
-			bio varchar(100),
+			follower_count smallint,
+			following_count smallint,
 			created_at timestamp,
 			updated_at timestamp,
 			is_del boolean DEFAULT false,
 			deleted_at timestamp
 		);
+		CREATE TABLE IF NOT EXISTS relationships(
+			id serial2 PRIMARY KEY,
+			follower_id	REFERENCES users(id) ON DELETE CASCADE, 
+			following_id serial2 REFERENCES users(id) ON DELETE CASCADE 
+		);
+		CREATE TABLE IF NOT EXISTS user_info(
+			id serial2 PRIMARY KEY,
+			user_id serial2 REFERENCES users(id) ON DELETE CASCADE,
+			bio varchar(100),
+			pfp_url varchar(100)
+		);
+		
+		CREATE OR REPLACE PROCEDURE followproc(follower_id int,following_id int)
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN
+			INSERT INTO relationships(follower_id,following_id) 
+			VALUES(follower_id,following_id);
+
+			UPDATE users SET following_count=following_count+1 WHERE id = follower_id;
+			UPDATE users SET follower_count=follower_count+1 WHERE id = following_id;
+			
+			COMMIT;
+		END;$$;
+		
+		CREATE OR REPLACE PROCEDURE unfollowproc(follower_id int,following_id int)
+		LANGUAGE plpgsql
+		AS $$
+		BEGIN 
+			DELETE FROM relationships WHERE follower_id = follower_id AND following_id = following_id;	
+			UPDATE users SET following_count=following_count-1 WHERE id = follower_id;
+			UPDATE users SET follower_count=follower_count-1 WHERE id = following_id;
+
+			COMMIT;
+		END;$$;
+			
 	`
-	return pgx.BeginFunc(ctx,u.conn,func(tx pgx.Tx)error{
-		_,err := tx.Exec(context.Background(),ddl)
-		if err != nil{
-			log.Print("error while migration: ",err)
-			return ErrInternalServerError
-		}
-		return nil 
-	})
+	tx,err := u.conn.BeginTx(ctx)
+	defer tx.Rollback(ctx)
+
+	if err != nil{
+		log.Print("error while creating tx: ",err)
+		return ErrInternalServerError
+	}
+	
+	err = tx.Exec(ctx,ddl)
+	if err != nil{
+		log.Print("error migrating: ",err)
+		return ErrInternalServerError 
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil{
+		log.Print("error commiting: ",err)
+		return ErrInternalServerError
+	}
+	
+	return nil
 }
 
 func (u *UserRepo) CreateUser(user *User)(uint,error){
@@ -94,6 +145,83 @@ func (u *UserRepo) CreateUser(user *User)(uint,error){
 	return id,nil
 }
 
+func (u *UserRepo) Follow(ctx context.Context,follower_id uint,following_id uint)error{
+	sql := `CALL followproc(@follower_id,@following_id)`
+
+	args := pgx.NamedArgs{
+		"follower_id":follower_id,
+		"following_id":following_id,
+	}
+	
+	txopts := pgx.TxOptions{Isolation:pgx.Serializable}
+	tx,err := u.conn.BeginTx(ctx)
+	defer tx.Rollback(ctx)
+
+	if err != nil{
+		log.Print("error while creating tx: ",err)
+		return ErrInternalServerError
+	}
+	
+	err = tx.Exec(ctx,sql,args)
+	if err != nil{
+		log.Print("error executing sql: ",err)
+		return ErrInternalServerError 
+	}
+	
+	//double commit 
+	err = tx.Commit(ctx)
+	if err != nil{
+		log.Print("error commiting: ",err)
+		return ErrInternalServerError
+	}
+	
+	return nil
+}
+
+func (u *UserRepo) Unfollow(ctx context.Context,follower_id uint,following_id uint)error{
+	sql := `CALL unfollowproc(@follower_id,@following_id)`	
+	args := pgx.NamedArgs{
+		"follower_id":follower_id,
+		"following_id":following_id,
+	}
+	
+	txopts := pgx.TxOptions{Isolation:pgx.Serializable}
+	tx,err := u.conn.BeginTx(ctx)
+	defer tx.Rollback(ctx)
+
+	if err != nil{
+		log.Print("error while creating tx: ",err)
+		return ErrInternalServerError
+	}
+	
+	err = tx.Exec(ctx,sql,args)
+	if err != nil{
+		log.Print("error executing sql: ",err)
+		return ErrInternalServerError 
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil{
+		log.Print("error commiting: ",err)
+		return ErrInternalServerError
+	}
+	
+	return nil
+}
+
+func (u *UserRepo) GetFollowers(ctx context.Context,id,limit,offset uint)([]*User,error){
+	sql := `
+		
+
+	`	
+}
+
+func (u *UserRepo) GetFollowing(ctx context.Context,id,limit,offset uint)([]*User,error){
+	sql := `
+		
+
+	`	
+}
 func (u *UserRepo) Delete(ctx context.Context,id uint)error{
 	sql := `UPDATE users SET is_del = true WHERE id = $1`
 	
