@@ -121,7 +121,7 @@ func (u *UserRepo) Delete(ctx context.Context,id uint)error{
 	return nil
 }
 
-func (u *UserRepo) Delete(ctx context.Context,id uint)error{
+func (u *UserRepo) DeleteForce(ctx context.Context,id uint)error{
 	sql := `DELETE FROM users WHERE id = $1`
 	
 	txopts := pgx.TxOptions{IsoLevel:Serializable}
