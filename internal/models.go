@@ -7,12 +7,24 @@ import(
 )
 type Models struct{
 	User interface{
+		Migrate(c context.Context)error
 		
+		CreateUser(c context.Context,u *User)(uint,error)
+		VerifyUserEmail(c context.Context,email string)error
+		CheckUserExists(c context.Context,email string)(bool,error)
+		GetUser(c context.Context,id uint)(*User,error)
+		GetPassword(c context.Context,email string)(*string,error)
+		UpdatePassword(c context.Context,id uint,password string)error
+		
+		GetVerifiedUsers(c context.Context,limit,offset uint)([]*User,error)
+		GetDeletedUsers(c context.Context,limit,offset uint)([]*User,error)
+		GetAllUsers(c context.Context,limit,offset uint)([]*User,error)
 	}
 }
 
 const(
 	ErrInternalServerError = errors.New("internal server error.")
+	ErrConflict = errors.New("already exists.")
 )
 
 func CreateModel()(*Models,error){
@@ -23,12 +35,12 @@ func CreateModel()(*Models,error){
 		return nil,ErrInternalServerError
 	}
 	
-	conn,err := CreatePGConn(context.Background(),dburl)
+	conn,err := CreatePostgresConn(context.Background(),dburl)
 	if err != nil{
-		return nil,err
+		return nil,ErrInternalServerError
 	}
 	
-	models := Models{
+	models := &Models{
 		User: UserRepo{conn:conn}
 	}
 	
@@ -36,6 +48,6 @@ func CreateModel()(*Models,error){
 		return nil,ErrInternalServerError
 	}
 
-	return *models,nil
+	return models,nil
 }
 

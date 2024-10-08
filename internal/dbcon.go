@@ -6,54 +6,30 @@ import(
 "context"
 )
 
-type PostgresDB struct{
-	Conn *pgx.Conn
-}
-
-var pgdb *PostgresDB
-
-func Setup(dburl string)error{
-	pgdb = &PostgresDB{}
-		
+func CreatePostgresConn(ctx context.Context,dburl string)(*pgx.Conn,error){
 	log.Print("connecting postgres.")
-	
-	var err error
-	pgdb.Conn,err = openConnection(dburl)
+	conn,err := openConnection(ctx,dburl)
 	if err != nil{
-		return err
+		log.Print("connection unsuccessfull: ",err)
+		return nil,err
 	}
 	log.Print("connection successfull.")
 
 	log.Print("ping?")
-	if err := pgdb.Conn.Ping(context.Background()); err != nil{
-		return err
+	if err := conn.Ping(context.Background()); err != nil{
+		log.Print("ping unsuccessfull: ",err)
+		return nil,err
 	}
 	log.Print("ping successfull")
 	
-	log.Print("migrating tables.")
-	if err := pgdb.migrate();err != nil{
-		return err
-	}
-	log.Print("migration successfull.")
-	return nil
+	return conn,nil 
 }
 
-
-func (pg *PostgresDB) migrate()error{
-	if err := pg.migrateUserTable(); err != nil{
-		log.Print("couldnt migrate table user: ",err)
-		return err
-	}
-
-	return nil
-}
-
-func openConnection(dburl string)(*pgx.Conn,error){
-	conn,err := pgx.Connect(context.Background(),dburl)
+func openConnection(ctx context.Context,dburl string)(*pgx.Conn,error){
+	conn,err := pgx.Connect(ctx,dburl)
 	if err != nil{
 		log.Print("couldnt connect to postgres: ",err)
 		return nil,err
 	}
 	return conn,nil
 }
-
