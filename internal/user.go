@@ -63,7 +63,6 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 			UPDATE users SET following_count=following_count+1 WHERE id = follower_id;
 			UPDATE users SET follower_count=follower_count+1 WHERE id = following_id;
 			
-			COMMIT;
 		END;$$;
 		
 		CREATE OR REPLACE PROCEDURE unfollowproc(follower_id int,following_id int)
@@ -74,7 +73,6 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 			UPDATE users SET following_count=following_count-1 WHERE id = follower_id;
 			UPDATE users SET follower_count=follower_count-1 WHERE id = following_id;
 
-			COMMIT;
 		END;$$;
 			
 	`
