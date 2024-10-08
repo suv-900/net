@@ -20,7 +20,11 @@ type User struct{
 	IsDeleted bool
 }
 
-func (pg *PostgresDB) migrateUserTable()error{
+type UserRepo struct{
+	conn *pgx.Conn	
+}
+
+func (u *UserRepo) Migrate(ctx context.Context)error{
 	ddl := `
 		CREATE TABLE IF NOT EXISTS users(
 			id serial2 PRIMARY KEY,
@@ -36,14 +40,17 @@ func (pg *PostgresDB) migrateUserTable()error{
 			deleted_at timestamp
 		);
 	`
-	return pgx.BeginFunc(context.Background(),pg.Conn,func(tx pgx.Tx)error{
+	return pgx.BeginFunc(ctx,u.conn,func(tx pgx.Tx)error{
 		_,err := tx.Exec(context.Background(),ddl)
-		return err
+		if err != nil{
+			log.Print("error while migration: ",err)
+			return ErrInternalServerError
+		}
+		return nil 
 	})
-
 }
 
-func (pg *PostgresDB) createUser(user *User)(uint,error){
+func (u *UserRepo) CreateUser(user *User)(uint,error){
 	sql := `
 		INSERT INTO users(name,email,email_verified,
 		password,role,bio,created_at,updated_at,
@@ -68,7 +75,7 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 	
 	txopts := pgx.TxOptions{IsoLevel:Serializable}
 
-	tx,err := pg.Conn.BeginTx(context.Background(),txopts)
+	tx,err := u.conn.BeginTx(context.Background(),txopts)
 	defer tx.Rollback(context.Background())
 	
 	if err != nil{
@@ -87,11 +94,65 @@ func (pg *PostgresDB) createUser(user *User)(uint,error){
 	return id,nil
 }
 
-func (pg *PostgresDB) verifyUser(ctx context.Context,id uint)error{
+func (u *UserRepo) Delete(ctx context.Context,id uint)error{
+	sql := `UPDATE users SET is_del = true WHERE id = $1`
+	
+	txopts := pgx.TxOptions{IsoLevel:Serializable}
+	tx,err := u.conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
+
+	if err != nil{
+		log.Print("error while creating tx: ",err)
+		return ErrInternalServerError
+	}
+	
+	err = tx.Exec(ctx,sql,id)
+	if err != nil{
+		log.Print("error deleting user: ",err)
+		return ErrInternalServerError 
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil{
+		log.Print("error commiting: ",err)
+		return ErrInternalServerError
+	}
+
+	return nil
+}
+
+func (u *UserRepo) Delete(ctx context.Context,id uint)error{
+	sql := `DELETE FROM users WHERE id = $1`
+	
+	txopts := pgx.TxOptions{IsoLevel:Serializable}
+	tx,err := u.conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
+
+	if err != nil{
+		log.Print("error while creating tx: ",err)
+		return ErrInternalServerError
+	}
+	
+	err = tx.Exec(ctx,sql,id)
+	if err != nil{
+		log.Print("error deleting(force) user: ",err)
+		return ErrInternalServerError 
+	}
+
+	err = tx.Commit(ctx)
+	if err != nil{
+		log.Print("error commiting: ",err)
+		return ErrInternalServerError
+	}
+
+	return nil
+}
+
+func (u *UserRepo) VerifyUserEmail(ctx context.Context,id uint)error{
 	sql := `UPDATE users SET email_verified=true WHERE id = $1;`
 
 	txopts := pgx.TxOptions{IsoLevel:Serializable}
-	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	tx,err := u.conn.BeginTx(ctx,txopts)
 	defer tx.Rollback(ctx)
 	
 	if err != nil{
@@ -120,13 +181,13 @@ func (pg *PostgresDB) verifyUser(ctx context.Context,id uint)error{
 	return nil
 }
 
-func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,error){
+func (u *UserRepo) CheckUserExists(ctx context.Context,email string)(bool,error){
 	sql := `SELECT COUNT(1) FROM users WHERE email = $1;`
 	
 	txopts := pgx.TxOptions{IsoLevel:Serializable,AccessMode:ReadOnly}
 	var count uint
 	
-	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	tx,err := u.conn.BeginTx(ctx,txopts)
 	defer tx.RollBack(ctx)
 	if err != nil{
 		return false,err
@@ -153,14 +214,14 @@ func (pg *PostgresDB) checkUserExists(ctx context.Context,email string)(bool,err
 	return count == 0,nil
 }
 
-func (pg *PostgresDB) getUser(ctx context.Context,id uint)(*User,error){
+func (u *UserRepo) GetUser(ctx context.Context,id uint)(*User,error){
 	sql := `
 		SELECT name,email,email_verified,bio,role,created_at
 		FROM users WHERE id = $1
 	`
 	user := User{}
 	
-	stmt,err := pg.Conn.Prepare(ctx,"getuser",sql)
+	stmt,err := u.conn.Prepare(ctx,"getuser",sql)
 	defer stmt.Close()
 	if err != nil{
 		log.Print("error preparing statement: ",err)
@@ -180,13 +241,44 @@ func (pg *PostgresDB) getUser(ctx context.Context,id uint)(*User,error){
 	return &user,nil
 }
 
-func (pg *PostgresDB) updatePassword(ctx context.Context,id uint,password string)error{
-	sql := `
-		UPDATE users SET password = @password
-		WHERE id = @id;
-	`
+func (u *UserRepo) GetPassword(ctx context.Context,id uint)(*string,error){
+	sql := `SELECT password FROM users WHERE id = $1`
+
+	txopts := pgx.TxOptions{IsoLevel:Serializable,AccessMode:ReadOnly}
+	tx,err := u.conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
+	if err != nil{
+		log.Print("error couldnt create transaction: ",err)
+		return nil,err
+	}
+	var password string
+	rows,err := tx.Query(ctx,sql,id)
+	defer rows.Close()
+
+	err = rows.Scan(&password)
+	if err != nil{
+		log.Print("error while scanning: ",err)
+		return nil,err
+	}
+	
+	if err := rows.Err();err != nil{
+		log.Print("error in db: ",err)
+		return nil,err
+	}
+
+	if err := tx.Commit();err != nil{
+		log.Print("error while commit: ",err)
+		return nil,err
+	}
+	
+	return &password,nil
+}
+
+
+func (u *UserRepo) UpdatePassword(ctx context.Context,id uint,password string)error{
+	sql := `UPDATE users SET password = @password WHERE id = @id;`
 	txopts := pgx.TxOptions{IsoLevel:Serializable}
-	tx,err := pg.Conn.BeginTx(ctx,txopts)
+	tx,err := u.conn.BeginTx(ctx,txopts)
 	defer tx.Rollback(ctx)
 	if err != nil{
 		log.Print("error while creating transaction: ",err)
@@ -207,12 +299,12 @@ func (pg *PostgresDB) updatePassword(ctx context.Context,id uint,password string
 	return nil
 }
 
-func (pg *PostgresDB) getVerifiedUsersList(ctx context.Context,limit,offset uint)([]*User,error){
+func (u *UserRepo) GetVerifiedUsers(ctx context.Context,limit,offset uint)([]*User,error){
 	sql := `
 		SELECT id,name,email,role FROM users WHERE email_verified=true
 		ORDER BY created_at ASC LIMIT $1 OFFSET $2;
 	`
-	rows,err = pg.Conn.Query(ctx,sql,limit,offset)
+	rows,err = u.conn.Query(ctx,sql,limit,offset)
 	defer rows.Close()
 	
 	var users []*User
@@ -234,13 +326,13 @@ func (pg *PostgresDB) getVerifiedUsersList(ctx context.Context,limit,offset uint
 	return users,nil
 }
 
-func (pg *PostgresDB) getDeletedUsers(ctx context.Context,limit,offset string)([]*User,error){
+func (u *UserRepo) GetDeletedUsers(ctx context.Context,limit,offset string)([]*User,error){
 	sql := `
 		SELECT id,name,email,role,created_at,deleted_at 
 		FROM users WHERE is_del = true ORDER BY deleted_at ASC
 		LIMIT $1 OFFSET $2;
 	`
-	rows,err := pg.Conn.Query(ctx,sql,limit,offset)
+	rows,err := u.conn.Query(ctx,sql,limit,offset)
 	defer rows.Close()
 	
 	var users []*User
@@ -264,7 +356,7 @@ func (pg *PostgresDB) getDeletedUsers(ctx context.Context,limit,offset string)([
 	return users,nil
 }
 
-func (pg *PostgresDB) getAllUsers(ctx context.Context,limit,offset uint,role string)([]*User,error){
+func (u *UserRepo) GetAllUsers(ctx context.Context,limit,offset uint,role string)([]*User,error){
 	sql := `
 		SELECT id,name,role,email,email_verified,created_at,updated_at
 		WHERE role = @role ORDER BY created_at ASC LIMIT @limit OFFSET @offset
@@ -275,7 +367,7 @@ func (pg *PostgresDB) getAllUsers(ctx context.Context,limit,offset uint,role str
 		"offset":offset,
 	}
 	
-	rows,err := pg.Conn.Query(ctx,sql,args)
+	rows,err := u.conn.Query(ctx,sql,args)
 	defer rows.Close()
 	
 	var users []*User
@@ -296,5 +388,3 @@ func (pg *PostgresDB) getAllUsers(ctx context.Context,limit,offset uint,role str
 
 	return users,nil
 }
-
-
