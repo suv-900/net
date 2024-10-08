@@ -31,14 +31,11 @@ func CreateModel()(*Models,error){
 	models := Models{
 		User: UserRepo{conn:conn}
 	}
+	
+	if  err := models.User.Migrate(context.Background()); err != nil{
+		return nil,ErrInternalServerError
+	}
 
 	return *models,nil
 }
-
-
-
-
-
-
-
 
