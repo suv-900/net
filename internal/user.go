@@ -97,26 +97,26 @@ func (u *UserRepo) Migrate(ctx context.Context)error{
 	defer tx.Rollback(ctx)
 
 	if err != nil{
-		log.Print("error for creating tx: ",err)
+		log.Print("error while creating tx: ",err)
 		return ErrInternalServerError
 	}
 	
 	err = tx.Exec(ctx,ddl)
 	if err != nil{
-		log.Print("error migrating: ",err)
+		log.Print("error while migrating: ",err)
 		return ErrInternalServerError 
 	}
 
 	err = tx.Commit(ctx)
 	if err != nil{
-		log.Print("error commiting: ",err)
+		log.Print("error while commiting: ",err)
 		return ErrInternalServerError
 	}
 	
 	return nil
 }
 
-func (u *UserRepo) CreateUser(user *User)(uint,error){
+func (u *UserRepo) CreateUser(ctx context.Context,user *User)(uint,error){
 	sql := `
 		INSERT INTO users(name,email,email_verified,
 		password,role,bio,created_at,updated_at,
@@ -141,20 +141,22 @@ func (u *UserRepo) CreateUser(user *User)(uint,error){
 	
 	txopts := pgx.TxOptions{IsoLevel:Serializable}
 
-	tx,err := u.conn.BeginTx(context.Background(),txopts)
-	defer tx.Rollback(context.Background())
-	
+	tx,err := u.conn.BeginTx(ctx,txopts)
+	defer tx.Rollback(ctx)
 	if err != nil{
-		return id,err
+		log.Print("error while creating tx: ",err)
+		return nil,ErrInternalServerError 
 	}
 
-	err = tx.Query(context.Background(),sql,args).Scan(&id)
+	err = tx.Query(ctx,sql,args).Scan(&id)
 	if err != nil{
-		return id,err
+		log.Print("error while executing: ",err)
+		return nil,ErrInternalServerError
 	}
 	
-	if err := tx.Commit(context.Background()); err != nil{
-		return id,err
+	err = tx.Commit(ctx)
+	if err != nil{
+		return nil,ErrInternalServerError
 	}
 
 	return id,nil
@@ -183,7 +185,7 @@ func (u *UserRepo) Follow(ctx context.Context,follower_id uint,following_id uint
 		return ErrInternalServerError 
 	}
 	
-	//double commit 
+	//no hardcoded commit
 	err = tx.Commit(ctx)
 	if err != nil{
 		log.Print("error commiting: ",err)
@@ -472,7 +474,7 @@ func (u *UserRepo) GetDeletedUsers(ctx context.Context,limit,offset string)([]*U
 		
 		err = rows.Scan(&user.Id,&user.Name,&user.Email,&user.Role,&user.CreatedAt,&user.DeletedAt)
 		if err != nil{
-			log.Print("error occured for scanning: ",err)
+			log.Print("error occured while scanning: ",err)
 			return nil,err
 		}
 
@@ -507,7 +509,7 @@ func (u *UserRepo) GetAllUsers(ctx context.Context,limit,offset uint,role string
 		err = rows.Scan(&user.Id,&user.Name,&user.Role,&user.Email,&user.EmailVerified,
 		&user.CreatedAt,&user.UpdatedAt)
 		if err != nil{
-			log.Print("error for scanning rows: ",err)
+			log.Print("error while scanning rows: ",err)
 			return nil,err
 		}
 		users = append(users,&user)
@@ -576,7 +578,7 @@ func (u *UserRepo) GetFollowing(ctx context.Context,id,limit,offset uint)([]*Use
 		var user User
 		err = rows.Scan(&user.Id,&user.Name,&user.FollowerCount,&user.FollowingCount)
 		if err != nil{
-			log.Print("err while scanning rows: ",err)
+			log.Print("error while scanning rows: ",err)
 			return nil,ErrInternalServerError
 		}
 		users = append(users,&user)
