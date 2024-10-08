@@ -1,9 +1,10 @@
 package main 
 
 import(
-"github.com/suv-900/net/cmd/api"
+"log"
 )
 
 func main(){
-	api.SetupServer()
+	log.Print("starting server.")
+	
 }
