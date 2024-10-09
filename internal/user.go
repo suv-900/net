@@ -15,7 +15,7 @@ type User struct{
 	Role string
 	FollowerCount uint
 	FollowingCount uint
-	ImageUrl *string
+	Imageurl *string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	DeletedAt time.Time
@@ -352,8 +352,8 @@ func (u *UserRepo) CheckUserExists(ctx context.Context,email string)(bool,error)
 
 func (u *UserRepo) GetUser(ctx context.Context,id uint)(*User,error){
 	sql := `
-		SELECT name,email,email_verified,bio,role,created_at
-		FROM users WHERE id = $1
+		SELECT u.id,u.name,u.email,u.email_verified,u.role,ui.image_url,ui.bio,u.created_at
+		FROM users u JOIN user_info ui ON u.id = ui.user_id WHERE u.id = $1;
 	`
 	user := User{}
 	
@@ -364,8 +364,8 @@ func (u *UserRepo) GetUser(ctx context.Context,id uint)(*User,error){
 		return nil,err
 	}
 	
-	err = stmt.QueryRow(id).Scan(&user.Name,&user.Email,&user.EmailVerified,
-		&user.Bio,&user.Role,&user.CreatedAt)
+	err = stmt.QueryRow(id).Scan(&user.Id,&user.Name,&user.Email,&user.EmailVerified,&user.Role,
+		&user.Imageurl,&user.Bio,&user.CreatedAt)
 	
 	if err != nil{
 		if err == sql.ErrNoRows{
