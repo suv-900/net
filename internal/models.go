@@ -29,7 +29,7 @@ type Models struct{
 }
 
 const(
-	ErrInternalServerError = errors.New("internal server error.")
+	ErrInternalServerError = errors.New("server error.")
 	ErrConflict = errors.New("already exists.")
 )
 
